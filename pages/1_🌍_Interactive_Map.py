@@ -17,9 +17,20 @@ from streamlit_folium import st_folium
 from folium.plugins import Draw
 from datetime import datetime
 from datetime import date
+import json
 
+json_data=st.secrets["json_data"]
+service_account = st.secrets["service_account"]
+
+
+# json_object = json.loads(json_data, strict=False)
+# service_account = json_object['client_email']
+# json_object = json.dumps(json_object)
+# Authorising the app
+credentials = ee.ServiceAccountCredentials(service_account, key_data=json_object)
 ee.Authenticate()
-ee.Initialize(project='vegetation-2023-408901')
+ee.Initialize(credentials)
+#ee.Initialize(project='vegetation-2023-408901')
 
 
 # def initialize_session_state():
@@ -36,7 +47,54 @@ ee.Initialize(project='vegetation-2023-408901')
 #     if "upload_file_button" not in st.session_state:
 #         st.session_state["upload_file_button"] = False
 
+def load_model(path):
+    with open (path, 'rb') as loaded_model:
+        model = pickle.load(loaded_model)
+    return model
 
+def get_steps(steps):
+  benchmark_year=2023
+  today=str(date.today())
+  year=today.split('-')[0]
+
+  month=today.split('-')[1]
+  gap=int(year)-benchmark_year
+  gap_month=gap*12 + int(month)
+  total_steps=gap_month+steps
+  return total_steps
+
+def generate_timestamps(num_steps):
+    months = 12
+    year = 2023
+    month_ = 1
+
+    dates = []
+
+    for num in range(num_steps):
+        year_change = num // 12
+        year_ = year + year_change
+
+        if num %12 == 0:
+            month_ = 1
+
+        date = f"{year_}-{month_}-01"
+        dates.append(date)
+
+        month_ += 1
+    return dates
+
+def predict(model, num_steps,):
+    prediction=model.forecast(num_steps)
+    timestamp=generate_timestamps(num_steps)
+    data_dict={
+        'predictions':list(prediction.values),
+        #'real_values': np.random.random(num_steps),
+        'timesteps': timestamp,
+    }
+    
+    df=pd.DataFrame(data_dict)
+    fig=px.line(df, x="timesteps", y=df.columns[0:2], title='Predicted Mean NDVI value for the next 24 months', width=700, height=500)
+    return fig
 
 
 st.title("Interactive Map")
@@ -50,8 +108,8 @@ SJ_CENTER=[36.824278, -118.910522]
 
 valleys = ['Sacramento', 'San Joaquin']
 model=None
-#sa_model = load_model('sa_model')
-#sj_model = load_model("sj_model")
+sa_model = load_model('sa_model')
+sj_model = load_model("sj_model")
 
 #initialize_session_state()
 
@@ -59,16 +117,8 @@ st.write("Select which valley your field is in:")
 
 st.session_state['valleySelect'] = st.selectbox('Select a valley', valleys)
 
-if st.session_state['valleySelect']=='Sacramento':
-    #model=sa_model
-
-    st.session_state['valleySelect']='Sacramento'
-
-else:
-    #model=sj_model
-    st.session_state['valleySelect']='San Joaquin'
-
 slider_val = st.slider("Select a step value", min_value=1, max_value=24,step=1,help='Select a step value')
+final_steps=get_steps(slider_val)
 
 start_date_input = st.date_input('Start date (YYY-MM-DD)', value="default_value_today", format="YYYY-MM-DD")
 print(type(start_date_input))
@@ -76,15 +126,16 @@ end_date_input = st.date_input('End date (YYY-MM-DD)', value="default_value_toda
 #final_steps=get_steps(slider_val)
 
 if st.session_state['valleySelect']=='Sacramento':
-    #model=sa_model
+    model=sa_model
     loc=SA_CENTER # recenters the map to SA valley
     st.session_state['valleySelect']='Sacramento'
+    fig2=predict(sa_model,final_steps)
 
 else:
-    #model=sj_model
+    model=sj_model
     loc=SJ_CENTER # recenters the map to SJ Valley
     st.session_state['valleySelect']='San Joaquin'
-
+    fig2=predict(sj_model,final_steps)
 print('loc:', loc)
 
 
@@ -313,8 +364,8 @@ if output is not None:
                     return featureList
                 #st.write('roi before feature call', roi) 
                 start_date = start_date_input.strftime("%Y-%m-%d")
-                st.write('start_date:', start_date)
-                st.write('type(start_date):', type(start_date))
+                #st.write('start_date:', start_date)
+                #st.write('type(start_date):', type(start_date))
                 end_date = end_date_input.strftime("%Y-%m-%d") 
                 feature_list = collect(roi, start_date, end_date)
                 #feature_list = collect(roi, '2023-05-01', '2023-06-01')
@@ -337,3 +388,4 @@ if output is not None:
                 fig=px.line(mean_df, x='date', y='NDVI_mean', title='Test Plot', width=700, height=500)
                 #fig2=px.line(df, x="timesteps", y=df.columns[0:2], title='Predicted Mean NDVI value for the next 24 months', width=700, height=500)
                 st.plotly_chart(fig)
+                st.plotly_chart(fig2)
