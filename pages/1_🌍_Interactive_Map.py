@@ -28,7 +28,7 @@ json_object = json.loads(json_data, strict=False)
 json_object = json.dumps(json_object)
 # Authorising the app
 credentials = ee.ServiceAccountCredentials(service_account, key_data=json_object)
-ee.Authenticate()
+#ee.Authenticate()
 ee.Initialize(credentials)
 #ee.Initialize(project='vegetation-2023-408901')
 
