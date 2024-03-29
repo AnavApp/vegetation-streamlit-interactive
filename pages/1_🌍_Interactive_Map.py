@@ -24,28 +24,9 @@ service_account = st.secrets["service_account"]
 
 
 json_object = json.loads(json_data, strict=False)
-# service_account = json_object['client_email']
 json_object = json.dumps(json_object)
-# Authorising the app
 credentials = ee.ServiceAccountCredentials(service_account, key_data=json_object)
-#ee.Authenticate()
 ee.Initialize(credentials)
-#ee.Initialize(project='vegetation-2023-408901')
-
-
-# def initialize_session_state():
-#     if "center" not in st.session_state:
-#         st.session_state["center"] = CENTER_START
-#     if "zoom" not in st.session_state:
-#         st.session_state["zoom"] = ZOOM_START
-#     if "markers" not in st.session_state:
-#         st.session_state["markers"] = []
-#     if "map_data" not in st.session_state:
-#         st.session_state["map_data"] = {}
-#     if "all_drawings" not in st.session_state["map_data"]:
-#         st.session_state["map_data"]["all_drawings"] = None
-#     if "upload_file_button" not in st.session_state:
-#         st.session_state["upload_file_button"] = False
 
 def load_model(path):
     with open (path, 'rb') as loaded_model:
@@ -119,6 +100,7 @@ st.session_state['valleySelect'] = st.selectbox('Select a valley', valleys)
 
 slider_val = st.slider("Select a step value", min_value=1, max_value=24,step=1,help='Select a step value')
 final_steps=get_steps(slider_val)
+st.write('type(final_steps):', type(final_steps))
 
 start_date_input = st.date_input('Start date (YYY-MM-DD)', value="default_value_today", format="YYYY-MM-DD")
 print(type(start_date_input))
@@ -164,56 +146,11 @@ if output is not None:
                     'type': 'Polygon',
                     'coordinates': coordinates
                 }
-                # geojson_object = {
-                #     'type': 'Polygon',
-                #     'coordinates': [
-                #         [
-                #             [
-                #                 -122.085,
-                #                 37.423
-                #             ],
-                #             [
-                #                 -122.092,
-                #                 37.424
-                #             ],
-                #             [
-                #                 -122.085,
-                #                 37.418
-                #             ],
-                #             [
-                #                 -122.085,
-                #                 37.423
-                #                 ]
-                #             ]
-                #         ]
-                # }
                 print(
                     'ee.Geometry accepts a GeoJSON object:',
                     ee.Geometry(geojson_object).getInfo()
                 )
-                #st.write('type(geojson_object):', type(geojson_object))
-                #st.write('geojson_object:', geojson_object)
-
                 roi=ee.Geometry(geojson_object)
-                #st.write('roi:', roi)
-                #st.write('roi.getInfo():', roi.getInfo())
-
-                # # GeoJSON strings need to be converted to an object.
-                # geojson_string = json.dumps(geojson_object)
-                # print('A GeoJSON string needs to be converted to an object:',
-                #       ee.Geometry(json.loads(geojson_string)).getInfo())
-
-                # # Use ee.Geometry to cast computed geometry objects into the ee.Geometry
-                # # class to access their methods. In the following example an ee.Geometry
-                # # object is stored as a ee.Feature property. When it is retrieved with the
-                # # .get() function, a computed geometry object is returned. Cast the computed
-                # # object as a ee.Geometry to get the geometry's bounds, for instance.
-                # feature = ee.Feature(None, {'geom': ee.Geometry(geojson_object)})
-                # print('Cast computed geometry objects to ee.Geometry class:',
-                #       ee.Geometry(feature.get('geom')).bounds().getInfo())
-
-                # #st.write(output)
-
 
                 def collect(region, start_date, end_date):
                     #print("Region:", region.getInfo())
@@ -281,9 +218,6 @@ if output is not None:
 
                         return ndvi_image.set('stats', multi_stats.values())
                     def calculateNDVIStatsForImageAsDictionary(ndvi_image):
-                        #image = sentinel2ImageCollection.first()
-                        #print('Image type is :', type(ndvi_image))
-
                         reducers = ee.Reducer.min() \
                         .combine(
                         ee.Reducer.max(),
