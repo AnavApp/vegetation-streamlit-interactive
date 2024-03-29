@@ -1,363 +1,339 @@
+import folium
+import streamlit as st
 import ee
+import random
 import numpy as np
 import os
-import streamlit as st
 import leafmap.foliumap as leafmap
 import requests
 import datetime
 import pickle
-from datetime import date
 import pandas as pd
 import plotly.express as px
 import time
-import folium
+import json
+from folium.plugins import Draw
 from streamlit_folium import st_folium
 from folium.plugins import Draw
 from datetime import datetime
+from datetime import date
+
 ee.Authenticate()
 ee.Initialize(project='vegetation-2023-408901')
 
 
-print('page got reloaded')
-
-@st.cache_resource
-def load_model(path):
-    with open (path, 'rb') as loaded_model:
-        model = pickle.load(loaded_model)
-    return model
-
-def get_steps(steps):
-  benchmark_year=2023
-  today=str(date.today())
-  year=today.split('-')[0]
-
-  month=today.split('-')[1]
-  gap=int(year)-benchmark_year
-  gap_month=gap*12 + int(month)
-  total_steps=gap_month+steps
-  return total_steps
-
-def predict(model, num_steps):
-    prediction=model.forecast(num_steps)
-    data_dict={
-        'predictions':list(prediction.values),
-        'timesteps': list(prediction.index),
-    }
-    df=pd.DataFrame(data_dict)
-    fig=px.line(df, x="timesteps", y="predictions", title='Predicted Mean NDVI value for the next 24 months', width=1200, height=700)
-
-    st.plotly_chart(fig)
-
-def sendToBackEnd():
-    print('sendToBackEnd called')
-    session=requests.session
-    print('Session:', session)
-    st.write(requests.post("http://localhost:8501/Interactive_Map").json())
-
-    #move the map to a new page
-    # move ui elements out of columns
-    # when the user selects # of steps, take todays date. Request for steps based on that date (year and month only) to fill it to 12
-
-def center():
-    print('Made it to center()')
-    if st.session_state['valleySelect']=='Sacramento': # Sacramento Valley
-        print('Made it to if')
-        #st.session_state['m'].set_center(-120.283654, 37.011918, 10)
-        #m.set_center(-120.283654, 37.011918, 10)
-    else:
-        print('Made it to else')
-        #st.session_state['m'].set_center(-122.011105, 39.129029, 20)
-        m.set_center(139.745438, 35.658581, 24)
-        #print('st.session_state[\'m\']:',st.session_state['m'])
-    st.session_state['m'].to_streamlit(height=700)
-CENTER_START = [37.011918, -120.283654] 
-ZOOM_START = 10
+# def initialize_session_state():
+#     if "center" not in st.session_state:
+#         st.session_state["center"] = CENTER_START
+#     if "zoom" not in st.session_state:
+#         st.session_state["zoom"] = ZOOM_START
+#     if "markers" not in st.session_state:
+#         st.session_state["markers"] = []
+#     if "map_data" not in st.session_state:
+#         st.session_state["map_data"] = {}
+#     if "all_drawings" not in st.session_state["map_data"]:
+#         st.session_state["map_data"]["all_drawings"] = None
+#     if "upload_file_button" not in st.session_state:
+#         st.session_state["upload_file_button"] = False
 
 
-def initialize_session_state():
-    if "center" not in st.session_state:
-        st.session_state["center"] = CENTER_START
-    if "zoom" not in st.session_state:
-        st.session_state["zoom"] = ZOOM_START
-    if "markers" not in st.session_state:
-        st.session_state["markers"] = []
-    if "map_data" not in st.session_state:
-        st.session_state["map_data"] = {}
-    if "all_drawings" not in st.session_state["map_data"]:
-        st.session_state["map_data"]["all_drawings"] = None
-    if "upload_file_button" not in st.session_state:
-        st.session_state["upload_file_button"] = False
-
-#@title { vertical-output: true}
-def collect(region,desc,fold):
-  #print("Region:", region.getInfo())
-  print("Description:", desc)
-  print("Folder:", fold)
-  roi = region
 
 
-  def printType(prompt, object):
-    print(prompt, type(object))
-  def format_date(timestamp):
-      """
-      Convert the UTC timestamps to date time
-
-      @parameters
-      timestamp: UTC timestamps in milliseconds
-
-      @return
-      None
-      """
-      # get the seconds by dividing 1000
-      #print(timestamp)
-      timestamp = timestamp/1000
-      # Convert the UTC timestamp to a datetime object
-      datetime_object = datetime.utcfromtimestamp(timestamp)
-      # Format the datetime object as a string (optional)
-      formatted_datetime = datetime_object.strftime("%Y-%m-%d %H:%M:%S UTC")
-      #print("Formatted Datetime:", formatted_datetime)
-      return formatted_datetime
-  def print_dict(dictionary):
-    for k, v in dictionary.items():
-      print(k, v)
-  def mapFunctionNDVI(specific_image):
-      Red = specific_image.select('B4')
-      NIR = specific_image.select('B8')
-
-      ndviPalette = ['FFFFFF', 'CE7E45', 'DF923D', 'F1B555', 'FCD163', '99B718', '74A901',
-                  '66A000', '529400', '3E8601', '207401', '056201', '004C00', '023B01',
-                  '012E01', '011D01', '011301']
-
-      NDVI_temp = specific_image
-      NDVI = NDVI_temp.addBands(((NIR.subtract(Red)).divide(NIR.add(Red))).rename('NDVI'))  #ee.Image
-      #nameOfBands = NDVI.bandNames().getInfo()
-      #nameOfBands.remove("B2")
-      #print(nameOfBands) # Check if everything in order
-
-      NDVI = NDVI.select('NDVI') # Select all bands except the one you wanna remove
-      #NDVI.copyProperties(specific_image)
-      return NDVI
-  def calculateNDVIStatsForImage(ndvi_image):
-    #image = sentinel2ImageCollection.first()
-    #print('Image type is :', type(ndvi_image))
-
-    reducers = ee.Reducer.min() \
-    .combine(
-      ee.Reducer.max(),
-      sharedInputs = True
-    ).combine(
-      ee.Reducer.mean(),
-      sharedInputs = True
-    ).combine(
-      ee.Reducer.stdDev(),
-      sharedInputs = True
-    )
-
-    multi_stats = ndvi_image.reduceRegion(
-        reducer=reducers,
-        geometry=roi,
-        scale=30,
-        crs='EPSG:32610'
-    )
-
-    return ndvi_image.set('stats', multi_stats.values())
-  def calculateNDVIStatsForImageAsDictionary(ndvi_image):
-    #image = sentinel2ImageCollection.first()
-    #print('Image type is :', type(ndvi_image))
-
-    reducers = ee.Reducer.min() \
-    .combine(
-      ee.Reducer.max(),
-      sharedInputs = True
-    ).combine(
-      ee.Reducer.mean(),
-      sharedInputs = True
-    ).combine(
-      ee.Reducer.stdDev(),
-      sharedInputs = True
-    )
-
-    multi_stats = ndvi_image.reduceRegion(
-        reducer=reducers,
-        geometry=roi,
-        scale=30,
-        crs='EPSG:32610'
-    )
-    #dateStart = format_date(ndvi_image.get('system:time_start').getInfo())
-
-    #multi_stats.set('dateStart','something')
-    return ndvi_image.set('stats_dictionary', multi_stats)
-
-
-  WANTED_BANDS = ['B2', 'B3', 'B4', 'B8']
-
-  print('ROI:', roi)
-  sentinel2ImageCollection = (
-      ee.ImageCollection('COPERNICUS/S2')
-      .select(WANTED_BANDS)
-      .filterBounds(roi)
-      .filterDate('2017-01-01', '2023-12-31')
-      .filter(
-          ee.Filter.lte('CLOUDY_PIXEL_PERCENTAGE',10)
-        )
-      #.limit(10)
-      #.filter(ee.Filter.calendarRange(1, 6, 'day_of_week'))
-  )
-
-
-  firstImage=sentinel2ImageCollection.first()
-
-  Map.addLayer(
-      sentinel2ImageCollection,
-      {'bands': ['B4', 'B3', 'B2'], 'min': 0, 'max': 3000, 'gamma': 1},
-      'Sentinel-2',
-  )
-
-  firstImage=sentinel2ImageCollection.first()
-
-  ndviCollection = sentinel2ImageCollection.map(mapFunctionNDVI) #collection of ndvi sentinel images
-  #print(ndviCollection.first().getInfo())
-
-  statsCollection = ndviCollection.map(calculateNDVIStatsForImage)
-  #printType('statsCollection', statsCollection)
-  statsList = statsCollection.toList(statsCollection.size())
-  statsLength = statsList.length().getInfo()
-  image = statsCollection.first()
-  dateStart = format_date(image.get('system:time_start').getInfo())
-  print('DONE!')
-
-
-  dictionaryCollection = ndviCollection.map(calculateNDVIStatsForImageAsDictionary)
-  dictionaryList = dictionaryCollection.toList(dictionaryCollection.size())
-  dictionaryLength = dictionaryList.length().getInfo()
-  featureList = []
-  print('Start time =', datetime.now())
-  for index in range(dictionaryLength):
-    image = ee.Image(dictionaryList.get(index))
-    dateStart = format_date(image.get('system:time_start').getInfo())
-    print('dateStart:',dateStart)
-    dictionary = image.get('stats_dictionary').getInfo()
-    dictionary['dateStart'] = dateStart
-
-    feature = ee.Feature(None, dictionary)
-    featureList.append(feature)
-
-  featureCollection = ee.FeatureCollection(featureList);
-  ee.batch.Export.table.toDrive(
-      collection=featureCollection,
-      description=desc,
-      folder=fold,
-      fileFormat='CSV',
-  ).start()
-  print('Task Started')
-  print('End =', datetime.now())
-
-markdown = """
-Web App URL: <https://geotemplate.streamlit.app>
-GitHub Repository: <https://github.com/giswqs/streamlit-multipage-template>
-"""
-st.sidebar.title("About")
-st.sidebar.info(markdown)
-logo = "https://i.imgur.com/UbOXYAU.png"
-st.sidebar.image(logo)
 st.title("Interactive Map")
 
-col1, col2 = st.columns([4, 1])
-options = list(leafmap.basemaps.keys())
+
+SA_CENTER=[39.204260, -120.755200]
+SJ_CENTER=[36.824278, -118.910522]
+
+
+#initialize_session_state()
+
 valleys = ['Sacramento', 'San Joaquin']
 model=None
-sa_model = load_model('sa_model')
-sj_model = load_model("sj_model")
+#sa_model = load_model('sa_model')
+#sj_model = load_model("sj_model")
 
-initialize_session_state()
+#initialize_session_state()
 
-#m = leafmap.Map(locate_control=True, latlon_control=True, draw_export=True, minimap_control=True,center=(35.658581,139.745438),zoom=15,google_map="SATELLITE")
-m = folium.Map(location=[39.949610, -75.150282], zoom_start=5)
-Draw(export=True).add_to(m)
+st.write("Select which valley your field is in:")
 
-if 'valleySelect' not in st.session_state:
-    st.session_state['valleySelect'] = ''
+st.session_state['valleySelect'] = st.selectbox('Select a valley', valleys)
 
-if 'm' not in st.session_state:
-    st.session_state['m'] = m
+if st.session_state['valleySelect']=='Sacramento':
+    #model=sa_model
 
-index = options.index("SATELLITE")
-try:
-    if st.session_state['m'] is None:
-        print('is None')
-except:
-    m = leafmap.Map(locate_control=True, latlon_control=True, draw_export=True, minimap_control=True)
-    #m = folium.Map(location=[39.949610, -75.150282], zoom_start=5)
-    m = folium.Map(zoom_start=1)
-    Draw(export=True).add_to(m)
-    #st.session_state['m']=leafmap.Map(locate_control=True, latlon_control=True, draw_export=True, minimap_control=True)
-    st.session_state['m']=folium.Map()
-    
-    print('st.session_state[\'m\']:', st.session_state['m'])
+    st.session_state['valleySelect']='Sacramento'
 
-with col2:
+else:
+    #model=sj_model
+    st.session_state['valleySelect']='San Joaquin'
 
-    basemap = st.selectbox("Select a basemap:", options, index)
-    st.write("Select which valley your field is in:")
+slider_val = st.slider("Select a step value", min_value=1, max_value=24,step=1,help='Select a step value')
 
-    st.session_state['valleySelect'] = st.selectbox('Select a valley', valleys)
-    
-    if st.session_state['valleySelect']=='Sacramento':
-        model=sa_model
-        #st.session_state['valleySelect']='Sacramento'
-    else:
-        model=sj_model
-        #st.session_state['valleySelect']='San Joaquin'
+start_date_input = st.date_input('Start date (YYY-MM-DD)', value="default_value_today", format="YYYY-MM-DD")
+print(type(start_date_input))
+end_date_input = st.date_input('End date (YYY-MM-DD)', value="default_value_today", format="YYYY-MM-DD")
+#final_steps=get_steps(slider_val)
 
-    slider_val = st.slider("Select a step value", min_value=1, max_value=24,step=1,help='Select a step value')
-    final_steps=get_steps(slider_val)
+if st.session_state['valleySelect']=='Sacramento':
+    #model=sa_model
+    loc=SA_CENTER # recenters the map to SA valley
+    st.session_state['valleySelect']='Sacramento'
 
-    
-with col1:
-    if st.session_state['valleySelect'] == 'Sacramento':
-        #st.session_state['m'].set_center(-120.283654, 37.011918, 10)
-        #st.session_state['m'].to_streamlit(height=500)
-        predict(sa_model,final_steps)
-        st.write('submitted :)')
-        st.write("valley", st.session_state['valleySelect'])
-        st.write("slider", slider_val)     
-    else:
-        #st.session_state['m'].set_center(139.745438, 35.658581, 10)
-        #st.session_state['m'].to_streamlit(height=500)
-        predict(sj_model,final_steps)
-        st.write('submitted :)')
-        st.write("valley", st.session_state['valleySelect'])
-        st.write("slider", slider_val)
-    #output = st_folium(m, width=700, height=500)
-    #st.write(output)
+else:
+    #model=sj_model
+    loc=SJ_CENTER # recenters the map to SJ Valley
+    st.session_state['valleySelect']='San Joaquin'
 
-    info=st.session_state['m']
-    #st.write(info.st_draw_features("all_drawings"))
+print('loc:', loc)
 
 
+m = folium.Map(location=loc,tiles = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', attr = 'Esri', zoom_start=9)
 
-map_data = st_folium(
-    m,
-    center=st.session_state["center"],
-    zoom=st.session_state["zoom"],
-    key="new",
-    width=1285,
-    height=725,
-    returned_objects=["all_drawings"],
-    use_container_width=True
-)
-st.write(st.session_state)  
-print(st.session_state)
-print('')
-print('')
-print('')
+st.session_state['m'] = m
 
-if 'coords' not in st.session_state:
-    st.session_state['coords'] = st.session_state["cd075c59d9edde94a5b91dd806f75d9ec8b7e2836c4066809b0fd28a87b6bef4"]["all_drawings"][0]["geometry"]["coordinates"]
-print('coords:', st.session_state['coords'])
+Draw(export=False).add_to(m)
+
+output = st_folium(m, width=1500, height=500)
+st.session_state['output'] = output
+print('output is:',output)
+if output is not None:
+    if output['all_drawings'] is not None:
+        if output['all_drawings'][0] is not None:
+            if output['all_drawings'][0]['geometry'] is not None:
+                st.session_state['coords'] = output['all_drawings'][0]['geometry']['coordinates'] # COORDINATES FOR SELECTED ROI
+                print('')
+                print('')
+                print('')
+                print('coords', st.session_state['coords'])
+                coordinates = []
+                coordinates = st.session_state['coords']
+                print('coordinates:',coordinates)
+                geojson_object = {
+                    'type': 'Polygon',
+                    'coordinates': coordinates
+                }
+                # geojson_object = {
+                #     'type': 'Polygon',
+                #     'coordinates': [
+                #         [
+                #             [
+                #                 -122.085,
+                #                 37.423
+                #             ],
+                #             [
+                #                 -122.092,
+                #                 37.424
+                #             ],
+                #             [
+                #                 -122.085,
+                #                 37.418
+                #             ],
+                #             [
+                #                 -122.085,
+                #                 37.423
+                #                 ]
+                #             ]
+                #         ]
+                # }
+                print(
+                    'ee.Geometry accepts a GeoJSON object:',
+                    ee.Geometry(geojson_object).getInfo()
+                )
+                #st.write('type(geojson_object):', type(geojson_object))
+                #st.write('geojson_object:', geojson_object)
+
+                roi=ee.Geometry(geojson_object)
+                #st.write('roi:', roi)
+                #st.write('roi.getInfo():', roi.getInfo())
+
+                # # GeoJSON strings need to be converted to an object.
+                # geojson_string = json.dumps(geojson_object)
+                # print('A GeoJSON string needs to be converted to an object:',
+                #       ee.Geometry(json.loads(geojson_string)).getInfo())
+
+                # # Use ee.Geometry to cast computed geometry objects into the ee.Geometry
+                # # class to access their methods. In the following example an ee.Geometry
+                # # object is stored as a ee.Feature property. When it is retrieved with the
+                # # .get() function, a computed geometry object is returned. Cast the computed
+                # # object as a ee.Geometry to get the geometry's bounds, for instance.
+                # feature = ee.Feature(None, {'geom': ee.Geometry(geojson_object)})
+                # print('Cast computed geometry objects to ee.Geometry class:',
+                #       ee.Geometry(feature.get('geom')).bounds().getInfo())
+
+                # #st.write(output)
 
 
-region=st.session_state['coords'].getInfo()
-desc="field1"
-fold="Datasets/SA/Cluster1"
-collect(region,desc,fold)
+                def collect(region, start_date, end_date):
+                    #print("Region:", region.getInfo())
+                    roi = region
+
+
+                    def printType(prompt, object):
+                        print(prompt, type(object))
+                    def format_date(timestamp):
+                        """
+                        Convert the UTC timestamps to date time
+
+                        @parameters
+                        timestamp: UTC timestamps in milliseconds
+
+                        @return
+                        None
+                        """
+                        # get the seconds by dividing 1000
+                        #print(timestamp)
+                        timestamp = timestamp/1000
+                        # Convert the UTC timestamp to a datetime object
+                        datetime_object = datetime.utcfromtimestamp(timestamp)
+                        # Format the datetime object as a string (optional)
+                        formatted_datetime = datetime_object.strftime("%Y-%m-%d %H:%M:%S UTC")
+                        #print("Formatted Datetime:", formatted_datetime)
+                        return formatted_datetime
+                    def print_dict(dictionary):
+                        for k, v in dictionary.items():
+                            print(k, v)
+                    def mapFunctionNDVI(specific_image):
+                        Red = specific_image.select('B4')
+                        NIR = specific_image.select('B8')
+                        NDVI_temp = specific_image
+                        NDVI = NDVI_temp.addBands(((NIR.subtract(Red)).divide(NIR.add(Red))).rename('NDVI'))  #ee.Image
+                        #nameOfBands = NDVI.bandNames().getInfo()
+                        #nameOfBands.remove("B2")
+                        #print(nameOfBands) # Check if everything in order
+
+                        NDVI = NDVI.select('NDVI') # Select all bands except the one you wanna remove
+                        #NDVI.copyProperties(specific_image)
+                        return NDVI
+                    def calculateNDVIStatsForImage(ndvi_image):
+                        #image = sentinel2ImageCollection.first()
+                        #print('Image type is :', type(ndvi_image))
+
+                        reducers = ee.Reducer.min() \
+                        .combine(
+                        ee.Reducer.max(),
+                        sharedInputs = True
+                        ).combine(
+                        ee.Reducer.mean(),
+                        sharedInputs = True
+                        ).combine(
+                        ee.Reducer.stdDev(),
+                        sharedInputs = True
+                        )
+
+                        multi_stats = ndvi_image.reduceRegion(
+                            reducer=reducers,
+                            geometry=roi,
+                            scale=30,
+                            crs='EPSG:32610'
+                        )
+
+                        return ndvi_image.set('stats', multi_stats.values())
+                    def calculateNDVIStatsForImageAsDictionary(ndvi_image):
+                        #image = sentinel2ImageCollection.first()
+                        #print('Image type is :', type(ndvi_image))
+
+                        reducers = ee.Reducer.min() \
+                        .combine(
+                        ee.Reducer.max(),
+                        sharedInputs = True
+                        ).combine(
+                        ee.Reducer.mean(),
+                        sharedInputs = True
+                        ).combine(
+                        ee.Reducer.stdDev(),
+                        sharedInputs = True
+                        )
+
+                        multi_stats = ndvi_image.reduceRegion(
+                            reducer=reducers,
+                            geometry=roi,
+                            scale=30,
+                            crs='EPSG:32610'
+                        )
+                        #dateStart = format_date(ndvi_image.get('system:time_start').getInfo())
+
+                        #multi_stats.set('dateStart','something')
+                        return ndvi_image.set('stats_dictionary', multi_stats)
+
+
+                    WANTED_BANDS = ['B2', 'B3', 'B4', 'B8']
+                    
+                    print('ROI:', roi)
+                    print('start_date:', start_date)
+                    print('end_date:', end_date)
+                    sentinel2ImageCollection = (
+                        ee.ImageCollection('COPERNICUS/S2')
+                        .select(WANTED_BANDS)
+                        .filterBounds(roi)
+                        .filterDate(start_date, end_date)
+                        .filter(
+                            ee.Filter.lte('CLOUDY_PIXEL_PERCENTAGE',10)
+                            )
+                        #.limit(2)
+                        #.filterDate('2023-05-01', '2023-06-01')
+                        #.filter(ee.Filter.calendarRange(1, 6, 'day_of_week'))
+                    )
+                    ndviCollection = sentinel2ImageCollection.map(mapFunctionNDVI) #collection of ndvi sentinel images
+                    #print('')
+                    #print('')
+                    #print('')
+                    #print('ndviCollection.getInfo:', ndviCollection.getInfo())
+
+                    statsCollection = ndviCollection.map(calculateNDVIStatsForImage)
+                    #printType('statsCollection', statsCollection)
+                    statsList = statsCollection.toList(statsCollection.size())
+                    statsLength = statsList.length().getInfo()
+                    image = statsCollection.first()
+                    dateStart = format_date(image.get('system:time_start').getInfo())
+                    #print('DONE!')
+
+
+                    dictionaryCollection = ndviCollection.map(calculateNDVIStatsForImageAsDictionary)
+                    dictionaryList = dictionaryCollection.toList(dictionaryCollection.size())
+                    dictionaryLength = dictionaryList.length().getInfo()
+                    featureList = []
+                    #print('Start time =', datetime.now())
+                    for index in range(dictionaryLength):
+                        image = ee.Image(dictionaryList.get(index))
+                        dateStart = format_date(image.get('system:time_start').getInfo())
+                        #print('dateStart:',dateStart)
+                        dictionary = image.get('stats_dictionary').getInfo()
+                        dictionary['dateStart'] = dateStart
+
+                        feature = ee.Feature(None, dictionary)
+                        featureList.append(feature)
+
+                    featureCollection = ee.FeatureCollection(featureList)
+                    #print('featureList:', featureList[0])
+                    #st.write(featureCollection)
+                    #print()
+                    #print('Task Started')
+                    #print('End =', datetime.now())
+                    return featureList
+                #st.write('roi before feature call', roi) 
+                start_date = start_date_input.strftime("%Y-%m-%d")
+                st.write('start_date:', start_date)
+                st.write('type(start_date):', type(start_date))
+                end_date = end_date_input.strftime("%Y-%m-%d") 
+                feature_list = collect(roi, start_date, end_date)
+                #feature_list = collect(roi, '2023-05-01', '2023-06-01')
+                #st.write('feature_list', feature_list)  
+                date_list=[]
+                mean_list=[]
+
+                for feature in feature_list:
+                    #st.write(feature.getInfo())
+                    #st.write(type(feature))
+                    #st.write('')
+                    date_list.append(feature.get("dateStart").getInfo())
+                    mean_list.append(feature.get("NDVI_mean").getInfo())
+                #st.write('date_list:', date_list)
+                #st.write('mean_list:', mean_list)
+                #st.write(feature.getInfo())
+                mean_df = pd.DataFrame(list(zip(date_list, mean_list)))
+                mean_df.columns=['date','NDVI_mean']
+                print('mean_df:', mean_df)
+                fig=px.line(mean_df, x='date', y='NDVI_mean', title='Test Plot', width=700, height=500)
+                #fig2=px.line(df, x="timesteps", y=df.columns[0:2], title='Predicted Mean NDVI value for the next 24 months', width=700, height=500)
+                st.plotly_chart(fig)
