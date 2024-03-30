@@ -19,7 +19,9 @@ from datetime import datetime
 from datetime import date
 import json
 
+
 st.set_page_config(layout="wide")
+st.title("NDVI Displayer")
 
 col1, col2 = st.columns([0.8, 0.2])
 
@@ -80,8 +82,6 @@ def predict(model, num_steps,):
     fig=px.line(df, x="timesteps", y=df.columns[0:2], title='Predicted Mean NDVI Trend', width=1000, height=700)
     return fig
 
-
-st.title("NDVI Displayer")
 
 
 SA_CENTER=[39.204260, -120.755200]
