@@ -21,17 +21,15 @@ import json
 
 st.set_page_config(layout="wide")
 
-# json_data=st.secrets["json_data"]
-# service_account = st.secrets["service_account"]
+col1, col2 = st.columns([0.69, 0.31])
 
+json_data=st.secrets["json_data"]
+service_account = st.secrets["service_account"]
 
-# json_object = json.loads(json_data, strict=False)
-# json_object = json.dumps(json_object)
-# credentials = ee.ServiceAccountCredentials(service_account, key_data=json_object)
-# ee.Initialize(credentials)
-
-ee.Authenticate()
-ee.Initialize(project='vegetation-2023-408901')
+json_object = json.loads(json_data, strict=False)
+json_object = json.dumps(json_object)
+credentials = ee.ServiceAccountCredentials(service_account, key_data=json_object)
+ee.Initialize(credentials)
 
 def load_model(path):
     with open (path, 'rb') as loaded_model:
@@ -94,14 +92,14 @@ model=None
 sa_model = load_model('sa_model')
 sj_model = load_model("sj_model")
 
-st.write("Select which valley your field is in:")
-
-st.session_state['valleySelect'] = st.selectbox('Select a valley', valleys)
-
-start_date_input = st.date_input('Start date (YYY-MM-DD)', value="default_value_today", format="YYYY-MM-DD")
-print(type(start_date_input))
-end_date_input = st.date_input('End date (YYY-MM-DD)', value="default_value_today", format="YYYY-MM-DD")
-#final_steps=get_steps(slider_val)
+with col1:
+    st.write("Select which valley your field is in:")
+    
+    st.session_state['valleySelect'] = st.selectbox('Select a valley', valleys)
+    
+    start_date_input = st.date_input('Start date (YYY-MM-DD)', value="default_value_today", format="YYYY-MM-DD")
+    print(type(start_date_input))
+    end_date_input = st.date_input('End date (YYY-MM-DD)', value="default_value_today", format="YYYY-MM-DD")
 
 if st.session_state['valleySelect']=='Sacramento':
     model=sa_model
