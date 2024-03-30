@@ -21,7 +21,7 @@ import json
 
 st.set_page_config(layout="wide")
 
-col1, col2 = st.columns([0.69, 0.31])
+col1, col2 = st.columns([0.8, 0.2])
 
 json_data=st.secrets["json_data"]
 service_account = st.secrets["service_account"]
