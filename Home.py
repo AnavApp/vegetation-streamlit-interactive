@@ -256,7 +256,7 @@ if output is not None:
                     print('start_date:', start_date)
                     print('end_date:', end_date)
                     sentinel2ImageCollection = (
-                        ee.ImageCollection('COPERNICUS/S2')
+                        ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED')
                         .select(WANTED_BANDS)
                         .filterBounds(roi)
                         .filterDate(start_date, end_date)
